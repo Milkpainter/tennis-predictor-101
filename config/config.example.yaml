@@ -1,0 +1,225 @@
+# Tennis Predictor 101 Configuration
+# Copy this file to config.yaml and customize as needed
+
+# Environment: development, staging, production
+environment: development
+
+# Database Configuration
+database:
+  host: localhost
+  port: 5432
+  database: tennis_predictor
+  username: postgres
+  password: your_password_here
+  pool_size: 10
+  max_overflow: 20
+
+# API Server Configuration
+api:
+  host: 0.0.0.0
+  port: 8000
+  debug: true
+  reload: true
+  log_level: info
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://localhost:8080"
+  rate_limit_per_minute: 100
+  max_batch_size: 100
+
+# Machine Learning Models Configuration
+models:
+  # XGBoost Model
+  xgboost:
+    n_estimators: 500
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+    random_state: 42
+    hyperparameter_optimization: true
+  
+  # Random Forest Model
+  random_forest:
+    n_estimators: 500
+    max_depth: 10
+    min_samples_split: 5
+    min_samples_leaf: 2
+    max_features: sqrt
+    random_state: 42
+    hyperparameter_tuning: true
+  
+  # Neural Network Model
+  neural_network:
+    hidden_layers: [128, 64, 32]
+    activation: relu
+    learning_rate: 0.001
+    epochs: 1000
+    early_stopping: true
+    dropout_rate: 0.3
+    use_scaling: true
+  
+  # SVM Model
+  svm:
+    kernel: rbf
+    C: 1.0
+    gamma: scale
+    probability: true
+    hyperparameter_tuning: true
+    feature_scaling: true
+  
+  # Logistic Regression Model
+  logistic_regression:
+    penalty: l2
+    C: 1.0
+    solver: liblinear
+    max_iter: 1000
+    hyperparameter_tuning: true
+    feature_selection: true
+    n_features_to_select: 50
+  
+  # Ensemble Configuration
+  ensemble:
+    meta_learner: logistic_regression
+    cv_folds: 5
+    use_probabilities: true
+    calibration_method: sigmoid
+    dynamic_weighting: true
+  
+  # Training Configuration
+  training:
+    test_size: 0.2
+    validation_size: 0.1
+    cv_folds: 5
+    scoring: accuracy
+    hyperparameter_optimization: true
+
+# ELO Rating System Configuration
+elo:
+  initial_rating: 1500
+  k_factor: 32
+  time_decay: 0.95
+  
+  # Surface-specific weights (research-validated)
+  surface_weights:
+    clay:
+      elo: 0.024
+      surface: 0.976
+    hard:
+      elo: 0.379
+      surface: 0.621
+    grass:
+      elo: 0.870
+      surface: 0.130
+  
+  # Tournament importance multipliers
+  tournament_multipliers:
+    grand_slam: 1.5
+    masters_1000: 1.3
+    atp_500: 1.15
+    atp_250: 1.0
+    challenger: 0.8
+
+# Momentum Analysis Configuration (42 Indicators)
+momentum:
+  indicators_count: 42
+  serving_indicators: 14
+  return_indicators: 14
+  rally_indicators: 14
+  
+  # Research-validated momentum weights
+  weights:
+    serving:
+      break_points_saved: 3.0      # Highest predictor
+      service_hold_rate: 2.5       # Critical baseline
+      service_games_streak: 2.0    # Momentum indicator
+      first_serve_trend: 1.8       # Performance trend
+      pressure_point_serving: 1.8  # Clutch performance
+      ace_rate_momentum: 1.5       # Power indicator
+    
+    return:
+      break_point_conversion: 3.0     # Highest return predictor
+      return_points_trend: 2.0        # Overall effectiveness
+      pressure_return_performance: 1.8 # Clutch returning
+      return_games_streak: 1.8        # Momentum indicator
+      break_attempt_frequency: 1.5    # Pressure application
+    
+    rally:
+      rally_win_percentage: 3.0       # Fundamental indicator
+      pressure_rally_performance: 2.5 # Clutch rallying
+      court_position_dominance: 2.0   # Tactical control
+      groundstroke_winner_rate: 1.8   # Offensive capability
+      unforced_error_control: 1.8     # Error management
+  
+  # Momentum classification thresholds
+  thresholds:
+    very_high: 0.85
+    high: 0.70
+    medium_high: 0.60
+    medium: 0.50
+    medium_low: 0.40
+    low: 0.30
+    very_low: 0.15
+
+# Betting Analysis Configuration
+betting:
+  kelly_fraction_cap: 0.25        # Maximum 25% of bankroll
+  min_edge_threshold: 0.02        # Minimum 2% edge required
+  min_confidence_threshold: 0.6   # Minimum 60% confidence
+  bankroll_size: 1000.0          # Default bankroll size
+  risk_tolerance: moderate        # conservative, moderate, aggressive
+
+# Data Collection and Processing
+data:
+  # Data sources
+  jeff_sackmann_enabled: true
+  odds_api_enabled: false
+  real_time_data_enabled: false
+  
+  # API keys (set via environment variables in production)
+  odds_api_key: ""  # Set via ODDS_API_KEY environment variable
+  
+  # Data storage paths
+  raw_data_path: data/raw
+  processed_data_path: data/processed
+  models_path: models/saved
+  
+  # Processing parameters
+  min_matches_per_player: 10
+  max_match_age_days: 1095  # 3 years
+
+# Logging Configuration
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file_path: logs/tennis_predictor.log
+  max_file_size_mb: 100
+  backup_count: 5
+
+# Performance Monitoring
+monitoring:
+  enable_metrics: true
+  metrics_port: 9090
+  health_check_interval: 60  # seconds
+  performance_tracking: true
+  prediction_logging: true
+
+# Feature Engineering
+features:
+  # Surface-specific features
+  surface_analysis: true
+  playing_style_classification: true
+  surface_transition_penalty: true
+  
+  # Environmental features
+  weather_impact: true
+  altitude_adjustment: true
+  court_conditions: true
+  
+  # Advanced features
+  momentum_analysis: true
+  elo_ratings: true
+  head_to_head_analysis: true
+  recent_form_analysis: true
