@@ -1,0 +1,227 @@
+# Tennis Predictor 101 Configuration
+# Master configuration for all system components
+
+# System Settings
+system:
+  version: "1.0.0"
+  environment: "development"  # development, staging, production
+  log_level: "INFO"
+  random_seed: 42
+  timezone: "UTC"
+
+# Data Sources Configuration
+data_sources:
+  # Primary tennis data
+  jeff_sackmann:
+    atp_url: "https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/"
+    wta_url: "https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master/"
+    update_frequency: "daily"
+    
+  # Real-time betting odds
+  odds_api:
+    base_url: "https://api.the-odds-api.com/v4/"
+    endpoints:
+      sports: "sports"
+      odds: "sports/tennis/odds"
+    update_frequency: "5min"
+    
+  # Weather data
+  weather_api:
+    base_url: "https://api.openweathermap.org/data/2.5/"
+    endpoints:
+      current: "weather"
+      forecast: "forecast"
+    update_frequency: "hourly"
+
+# Feature Engineering Settings
+feature_engineering:
+  # ELO rating system
+  elo:
+    initial_rating: 1500
+    k_factor: 32
+    surface_adjustments:
+      clay: 1.1
+      hard: 1.0
+      grass: 0.9
+    decay_factor: 0.95  # Per month
+    
+  # Momentum indicators
+  momentum:
+    lookback_matches: 10
+    serve_streak_weight: 0.3
+    break_point_weight: 0.4
+    scoring_pattern_weight: 0.3
+    
+  # Surface-specific adjustments
+  surface:
+    clay_defensive_bonus: 0.15
+    grass_serve_bonus: 0.12
+    hard_baseline_bonus: 0.08
+    
+  # Environmental factors
+  environmental:
+    temperature_impact: 0.02  # Per degree C
+    humidity_threshold: 70    # % humidity for significant impact
+    wind_speed_threshold: 15  # km/h for significant impact
+    altitude_adjustment: 0.001 # Per meter above sea level
+
+# Model Configuration
+models:
+  # Base models
+  base_models:
+    xgboost:
+      n_estimators: 500
+      max_depth: 6
+      learning_rate: 0.1
+      subsample: 0.8
+      colsample_bytree: 0.8
+      random_state: 42
+      
+    random_forest:
+      n_estimators: 500
+      max_depth: 10
+      min_samples_split: 5
+      min_samples_leaf: 2
+      random_state: 42
+      
+    neural_network:
+      hidden_layers: [128, 64, 32]
+      dropout_rate: 0.3
+      learning_rate: 0.001
+      batch_size: 64
+      epochs: 100
+      
+    svm:
+      kernel: "rbf"
+      C: 1.0
+      gamma: "scale"
+      probability: true
+      
+  # Ensemble configuration
+  ensemble:
+    stacking:
+      meta_learner: "logistic_regression"
+      cv_folds: 5
+      use_probabilities: true
+      
+    voting:
+      voting_strategy: "soft"
+      weights: [0.25, 0.25, 0.25, 0.25]  # Equal weights initially
+      
+    bayesian_averaging:
+      prior_strength: 1.0
+      update_frequency: "daily"
+
+# Validation Settings
+validation:
+  cross_validation:
+    strategy: "tournament_based"  # tournament_based, time_series, stratified
+    n_splits: 5
+    test_size: 0.2
+    
+  backtesting:
+    start_date: "2020-01-01"
+    end_date: "2024-12-31"
+    min_matches_per_player: 10
+    
+  metrics:
+    primary: "accuracy"
+    secondary: ["precision", "recall", "f1", "brier_score", "log_loss"]
+    betting_roi: true
+
+# API Configuration
+api:
+  prediction_service:
+    host: "0.0.0.0"
+    port: 8000
+    workers: 4
+    timeout: 30
+    
+  rate_limiting:
+    requests_per_minute: 100
+    burst_limit: 20
+    
+  caching:
+    enabled: true
+    ttl: 300  # 5 minutes
+    redis_url: "redis://localhost:6379"
+
+# Database Settings
+database:
+  primary:
+    type: "postgresql"
+    host: "localhost"
+    port: 5432
+    name: "tennis_predictor"
+    
+  cache:
+    type: "redis"
+    host: "localhost"
+    port: 6379
+    db: 0
+    
+  time_series:
+    type: "influxdb"
+    host: "localhost"
+    port: 8086
+    database: "tennis_metrics"
+
+# Monitoring & Logging
+monitoring:
+  wandb:
+    project: "tennis-predictor-101"
+    entity: "milkpainter"
+    
+  mlflow:
+    tracking_uri: "http://localhost:5000"
+    experiment_name: "tennis_prediction"
+    
+  performance_tracking:
+    log_predictions: true
+    track_feature_importance: true
+    monitor_drift: true
+    
+  alerts:
+    accuracy_threshold: 0.65  # Alert if accuracy drops below
+    latency_threshold: 1000   # Alert if prediction takes >1s
+    
+# Market Analysis
+market_analysis:
+  betting_exchanges:
+    - "betfair"
+    - "pinnacle"
+    - "bet365"
+    
+  arbitrage_detection:
+    enabled: true
+    min_profit_margin: 0.02  # 2% minimum profit
+    
+  inefficiency_detection:
+    favorite_longshot_bias: true
+    surface_mispricing: true
+    momentum_corrections: true
+    
+  kelly_criterion:
+    enabled: true
+    max_bet_fraction: 0.05  # Never bet more than 5% of bankroll
+    min_edge: 0.03         # Minimum 3% edge required
+
+# Performance Optimization
+optimization:
+  multiprocessing:
+    enabled: true
+    max_workers: 8
+    
+  gpu_acceleration:
+    enabled: false  # Set to true if CUDA available
+    device: "cuda:0"
+    
+  memory_management:
+    batch_processing: true
+    batch_size: 1000
+    garbage_collection: true
+    
+  caching:
+    feature_cache: true
+    model_cache: true
+    prediction_cache: true
