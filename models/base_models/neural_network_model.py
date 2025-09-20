@@ -1,336 +1,286 @@
-"""Neural Network model for tennis prediction.
+"""Neural Network Model for Tennis Prediction.
 
-Implements feed-forward neural network with dropout regularization,
-batch normalization, and early stopping for tennis match prediction.
+Implements deep neural network with:
+- Multi-layer perceptron architecture
+- Dropout regularization
+- Batch normalization
+- Early stopping
+- Learning rate scheduling
 """
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional, List
-from sklearn.neural_network import MLPClassifier
+from typing import Dict, Any, List, Optional, Tuple
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import validation_curve
-import warnings
-warnings.filterwarnings('ignore')
+from sklearn.model_selection import train_test_split
+import joblib
+import logging
+from datetime import datetime
+
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from torch.utils.data import DataLoader, TensorDataset
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 from .base_model import BaseModel
 from config import get_config
 
 
+class TennisNeuralNetwork(nn.Module):
+    """Neural network architecture for tennis prediction."""
+    
+    def __init__(self, input_size: int, hidden_layers: List[int] = [128, 64, 32], 
+                 dropout_rate: float = 0.3):
+        super().__init__()
+        
+        self.input_size = input_size
+        self.hidden_layers = hidden_layers
+        self.dropout_rate = dropout_rate
+        
+        # Build network layers
+        layers = []
+        prev_size = input_size
+        
+        for hidden_size in hidden_layers:
+            layers.extend([
+                nn.Linear(prev_size, hidden_size),
+                nn.BatchNorm1d(hidden_size),
+                nn.ReLU(),
+                nn.Dropout(dropout_rate)
+            ])
+            prev_size = hidden_size
+        
+        # Output layer
+        layers.append(nn.Linear(prev_size, 2))  # Binary classification
+        
+        self.network = nn.Sequential(*layers)
+        
+    def forward(self, x):
+        return self.network(x)
+
+
 class NeuralNetworkModel(BaseModel):
-    """Neural Network model for tennis match prediction.
+    """Deep Neural Network Model for Tennis Prediction."""
     
-    Features:
-    - Multi-layer perceptron architecture
-    - Dropout regularization
-    - Adaptive learning rate
-    - Early stopping
-    - Feature scaling
-    - Architecture optimization
-    """
-    
-    def __init__(self, **kwargs):
-        # Get default parameters from config
-        config = get_config()
-        default_params = config.get('models.base_models.neural_network', {})
+    def __init__(self, use_scaling: bool = True):
+        super().__init__()
         
-        # Merge with provided parameters
-        params = {**default_params, **kwargs}
+        self.model_name = "NeuralNetwork"
+        self.config = get_config()
+        self.logger = logging.getLogger(f"model.{self.model_name}")
         
-        super().__init__("NeuralNetwork", **params)
+        # Configuration
+        self.use_scaling = use_scaling
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if TORCH_AVAILABLE else None
         
-        # Neural network specific parameters
-        self.hidden_layer_sizes = params.get('hidden_layers', [128, 64, 32])
-        self.activation = params.get('activation', 'relu')
-        self.solver = params.get('solver', 'adam')
-        self.alpha = params.get('alpha', 0.001)  # L2 regularization
-        self.learning_rate_init = params.get('learning_rate', 0.001)
-        self.learning_rate = params.get('learning_rate_schedule', 'adaptive')
-        self.max_iter = params.get('epochs', 1000)
-        self.early_stopping = params.get('early_stopping', True)
-        self.validation_fraction = params.get('validation_fraction', 0.1)
-        self.n_iter_no_change = params.get('patience', 20)
-        self.random_state = params.get('random_state', 42)
+        # Model components
+        self.model = None
+        self.scaler = StandardScaler() if use_scaling else None
+        self.training_history = []
         
-        # Advanced parameters
-        self.batch_size = params.get('batch_size', 'auto')
-        self.beta_1 = params.get('beta_1', 0.9)  # Adam parameter
-        self.beta_2 = params.get('beta_2', 0.999)  # Adam parameter
-        self.epsilon = params.get('epsilon', 1e-8)  # Adam parameter
+        # Training parameters
+        self.hidden_layers = [128, 64, 32]
+        self.learning_rate = 0.001
+        self.epochs = 1000
+        self.batch_size = 32
+        self.dropout_rate = 0.3
+        self.early_stopping_patience = 50
         
-        # Feature scaling
-        self.scaler = StandardScaler()
-        self.use_scaling = params.get('use_scaling', True)
+        if not TORCH_AVAILABLE:
+            self.logger.warning("PyTorch not available, using fallback implementation")
         
-        # Training artifacts
-        self.loss_curve = []
-        self.validation_scores = []
-        self.best_validation_score = None
-        self.training_stopped_early = False
-    
-    def _create_model(self) -> MLPClassifier:
-        """Create MLPClassifier with optimized parameters."""
-        return MLPClassifier(
-            hidden_layer_sizes=tuple(self.hidden_layer_sizes),
-            activation=self.activation,
-            solver=self.solver,
-            alpha=self.alpha,
-            learning_rate_init=self.learning_rate_init,
-            learning_rate=self.learning_rate,
-            max_iter=self.max_iter,
-            early_stopping=self.early_stopping,
-            validation_fraction=self.validation_fraction,
-            n_iter_no_change=self.n_iter_no_change,
-            batch_size=self.batch_size,
-            beta_1=self.beta_1,
-            beta_2=self.beta_2,
-            epsilon=self.epsilon,
-            random_state=self.random_state
-        )
-    
-    def _fit_model(self, X: pd.DataFrame, y: pd.Series) -> MLPClassifier:
-        """Fit neural network with feature scaling and optimization."""
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> 'NeuralNetworkModel':
+        """Train the neural network."""
         
-        # Feature scaling
-        if self.use_scaling:
-            X_scaled = self.scaler.fit_transform(X)
-            X_scaled = pd.DataFrame(X_scaled, columns=X.columns, index=X.index)
+        self.logger.info(f"Training NeuralNetwork on {len(X)} samples")
+        start_time = datetime.now()
+        
+        if not TORCH_AVAILABLE:
+            # Fallback to simple logistic regression
+            from sklearn.linear_model import LogisticRegression
+            self.model = LogisticRegression(random_state=42)
+            
+            if self.use_scaling:
+                X_scaled = self.scaler.fit_transform(X)
+                self.model.fit(X_scaled, y)
+            else:
+                self.model.fit(X, y)
+            
+            train_accuracy = accuracy_score(y, self.predict(X))
+            
         else:
-            X_scaled = X
+            # Full PyTorch implementation
+            train_accuracy = self._train_pytorch_model(X, y)
         
-        # Architecture optimization if requested
-        if len(self.hidden_layer_sizes) == 3 and self.hidden_layer_sizes == [128, 64, 32]:
-            # Default architecture - try optimization
-            optimized_architecture = self._optimize_architecture(X_scaled, y)
-            if optimized_architecture:
-                self.hidden_layer_sizes = optimized_architecture
-                self.model = self._create_model()
+        training_time = (datetime.now() - start_time).total_seconds()
         
-        # Fit the model
-        self.model.fit(X_scaled, y)
-        
-        # Store training artifacts
-        if hasattr(self.model, 'loss_curve_'):
-            self.loss_curve = self.model.loss_curve_
-        
-        if hasattr(self.model, 'validation_scores_'):
-            self.validation_scores = self.model.validation_scores_
-            self.best_validation_score = max(self.validation_scores)
-        
-        # Check if training stopped early
-        self.training_stopped_early = (hasattr(self.model, 'n_iter_') and 
-                                     self.model.n_iter_ < self.max_iter)
-        
-        if self.training_stopped_early:
-            self.logger.info(f"Training stopped early at iteration {self.model.n_iter_}")
-        
-        return self.model
-    
-    def _predict_proba_model(self, X: pd.DataFrame) -> np.ndarray:
-        """Get prediction probabilities with feature scaling."""
-        if self.use_scaling:
-            X_scaled = self.scaler.transform(X)
-            X_scaled = pd.DataFrame(X_scaled, columns=X.columns, index=X.index)
-        else:
-            X_scaled = X
-        
-        return self.model.predict_proba(X_scaled)
-    
-    def _optimize_architecture(self, X: pd.DataFrame, y: pd.Series) -> Optional[List[int]]:
-        """Optimize neural network architecture."""
-        self.logger.info("Optimizing neural network architecture")
-        
-        # Define architecture candidates
-        architectures = [
-            [64],
-            [128],
-            [64, 32],
-            [128, 64],
-            [256, 128],
-            [128, 64, 32],
-            [256, 128, 64],
-            [512, 256, 128],
-            [256, 128, 64, 32],
-            [512, 256, 128, 64]
-        ]
-        
-        best_score = 0
-        best_architecture = None
-        
-        for arch in architectures:
-            try:
-                # Create temporary model
-                temp_model = MLPClassifier(
-                    hidden_layer_sizes=tuple(arch),
-                    max_iter=200,  # Reduced for speed
-                    early_stopping=True,
-                    validation_fraction=0.2,
-                    random_state=self.random_state,
-                    alpha=self.alpha
-                )
-                
-                # Quick validation
-                from sklearn.model_selection import cross_val_score
-                scores = cross_val_score(temp_model, X, y, cv=3, scoring='accuracy')
-                avg_score = scores.mean()
-                
-                if avg_score > best_score:
-                    best_score = avg_score
-                    best_architecture = arch
-                
-                self.logger.debug(f"Architecture {arch}: {avg_score:.3f}")
-                
-            except Exception as e:
-                self.logger.warning(f"Error testing architecture {arch}: {e}")
-                continue
-        
-        if best_architecture:
-            self.logger.info(f"Best architecture found: {best_architecture} (score: {best_score:.3f})")
-            return best_architecture
-        
-        return None
-    
-    def analyze_learning_curve(self) -> Dict[str, Any]:
-        """Analyze model learning behavior."""
-        if not self.loss_curve:
-            return {}
-        
-        analysis = {
-            'total_iterations': len(self.loss_curve),
-            'final_loss': self.loss_curve[-1],
-            'initial_loss': self.loss_curve[0],
-            'loss_reduction': self.loss_curve[0] - self.loss_curve[-1],
-            'converged': self.training_stopped_early,
-            'loss_curve': self.loss_curve
+        self.training_metrics = {
+            'accuracy': train_accuracy,
+            'training_time_seconds': training_time,
+            'epochs_trained': len(self.training_history),
+            'device_used': str(self.device) if self.device else 'cpu'
         }
         
-        # Analyze convergence behavior
-        if len(self.loss_curve) > 10:
-            recent_improvement = (self.loss_curve[-10] - self.loss_curve[-1]) / 10
-            analysis['recent_improvement_rate'] = recent_improvement
-            analysis['is_still_improving'] = recent_improvement > 1e-5
+        self.is_trained = True
+        self.logger.info(f"NeuralNetwork training completed - Accuracy: {train_accuracy:.3f}")
         
-        # Validation curve analysis
-        if self.validation_scores:
-            analysis.update({
-                'best_validation_score': self.best_validation_score,
-                'validation_curve': self.validation_scores,
-                'overfitting_detected': self._detect_overfitting()
+        return self
+    
+    def _train_pytorch_model(self, X: pd.DataFrame, y: pd.Series) -> float:
+        """Train PyTorch neural network."""
+        
+        # Prepare data
+        if self.use_scaling:
+            X_scaled = self.scaler.fit_transform(X)
+        else:
+            X_scaled = X.values
+        
+        # Convert to tensors
+        X_tensor = torch.FloatTensor(X_scaled).to(self.device)
+        y_tensor = torch.LongTensor(y.values).to(self.device)
+        
+        # Train/validation split
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_tensor, y_tensor, test_size=0.2, random_state=42, stratify=y_tensor.cpu()
+        )
+        
+        # Create data loaders
+        train_dataset = TensorDataset(X_train, y_train)
+        val_dataset = TensorDataset(X_val, y_val)
+        
+        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=self.batch_size)
+        
+        # Initialize model
+        self.model = TennisNeuralNetwork(
+            input_size=X.shape[1],
+            hidden_layers=self.hidden_layers,
+            dropout_rate=self.dropout_rate
+        ).to(self.device)
+        
+        # Loss function and optimizer
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=20)
+        
+        # Training loop
+        best_val_loss = float('inf')
+        patience_counter = 0
+        
+        for epoch in range(self.epochs):
+            # Training phase
+            self.model.train()
+            train_loss = 0.0
+            
+            for batch_X, batch_y in train_loader:
+                optimizer.zero_grad()
+                outputs = self.model(batch_X)
+                loss = criterion(outputs, batch_y)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
+            
+            # Validation phase
+            self.model.eval()
+            val_loss = 0.0
+            correct = 0
+            total = 0
+            
+            with torch.no_grad():
+                for batch_X, batch_y in val_loader:
+                    outputs = self.model(batch_X)
+                    loss = criterion(outputs, batch_y)
+                    val_loss += loss.item()
+                    
+                    _, predicted = torch.max(outputs.data, 1)
+                    total += batch_y.size(0)
+                    correct += (predicted == batch_y).sum().item()
+            
+            val_accuracy = correct / total
+            scheduler.step(val_loss)
+            
+            # Record training history
+            self.training_history.append({
+                'epoch': epoch,
+                'train_loss': train_loss / len(train_loader),
+                'val_loss': val_loss / len(val_loader),
+                'val_accuracy': val_accuracy
             })
-        
-        return analysis
-    
-    def _detect_overfitting(self) -> bool:
-        """Detect overfitting from validation scores."""
-        if not self.validation_scores or len(self.validation_scores) < 10:
-            return False
-        
-        # Check if validation score is declining
-        recent_scores = self.validation_scores[-10:]
-        trend = np.polyfit(range(len(recent_scores)), recent_scores, 1)[0]
-        
-        return trend < -0.001  # Declining validation performance
-    
-    def get_network_weights_analysis(self) -> Dict[str, Any]:
-        """Analyze network weight distributions."""
-        if not self.is_trained:
-            return {}
-        
-        analysis = {}
-        
-        # Analyze each layer's weights
-        for i, coef_matrix in enumerate(self.model.coefs_):
-            layer_name = f"layer_{i+1}"
             
-            analysis[layer_name] = {
-                'shape': coef_matrix.shape,
-                'mean_weight': float(np.mean(coef_matrix)),
-                'std_weight': float(np.std(coef_matrix)),
-                'max_weight': float(np.max(coef_matrix)),
-                'min_weight': float(np.min(coef_matrix)),
-                'zero_weights_pct': float(np.mean(np.abs(coef_matrix) < 1e-6))
-            }
-        
-        # Analyze biases
-        for i, bias_vector in enumerate(self.model.intercepts_):
-            bias_name = f"bias_{i+1}"
-            
-            analysis[bias_name] = {
-                'shape': bias_vector.shape,
-                'mean_bias': float(np.mean(bias_vector)),
-                'std_bias': float(np.std(bias_vector))
-            }
-        
-        return analysis
-    
-    def plot_training_progress(self):
-        """Plot training progress if matplotlib available."""
-        try:
-            import matplotlib.pyplot as plt
-            
-            fig, axes = plt.subplots(1, 2 if self.validation_scores else 1, figsize=(12, 5))
-            
-            if not isinstance(axes, np.ndarray):
-                axes = [axes]
-            
-            # Plot loss curve
-            if self.loss_curve:
-                axes[0].plot(self.loss_curve, label='Training Loss', color='blue')
-                axes[0].set_xlabel('Iteration')
-                axes[0].set_ylabel('Loss')
-                axes[0].set_title('Training Loss Curve')
-                axes[0].grid(True, alpha=0.3)
-                axes[0].legend()
-            
-            # Plot validation curve if available
-            if self.validation_scores and len(axes) > 1:
-                axes[1].plot(self.validation_scores, label='Validation Score', color='green')
-                axes[1].set_xlabel('Iteration')
-                axes[1].set_ylabel('Validation Accuracy')
-                axes[1].set_title('Validation Score Curve')
-                axes[1].grid(True, alpha=0.3)
-                axes[1].legend()
+            # Early stopping
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                patience_counter = 0
+            else:
+                patience_counter += 1
                 
-                # Mark best validation score
-                best_idx = np.argmax(self.validation_scores)
-                axes[1].scatter(best_idx, self.validation_scores[best_idx], 
-                              color='red', s=100, label=f'Best ({self.best_validation_score:.3f})')
-                axes[1].legend()
-            
-            plt.tight_layout()
-            plt.show()
-            
-        except ImportError:
-            self.logger.warning("Matplotlib not available for plotting")
-    
-    def get_training_info(self) -> Dict[str, Any]:
-        """Get comprehensive training information."""
-        info = self.get_model_info()
+            if patience_counter >= self.early_stopping_patience:
+                self.logger.info(f"Early stopping at epoch {epoch}")
+                break
         
-        info.update({
-            'architecture': self.hidden_layer_sizes,
-            'total_parameters': self._count_parameters(),
-            'oob_score': self.oob_score_value,
-            'training_stopped_early': self.training_stopped_early,
-            'learning_curve': self.analyze_learning_curve(),
-            'network_analysis': self.get_network_weights_analysis()
-        })
+        # Calculate final training accuracy
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(X_tensor)
+            _, predicted = torch.max(outputs, 1)
+            train_accuracy = (predicted == y_tensor).float().mean().item()
         
-        return info
+        return train_accuracy
     
-    def _count_parameters(self) -> int:
-        """Count total number of parameters in the network."""
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
         if not self.is_trained:
-            return 0
+            raise ValueError("Model must be trained first")
         
-        total_params = 0
+        if not TORCH_AVAILABLE:
+            # Fallback prediction
+            if self.use_scaling:
+                X_scaled = self.scaler.transform(X)
+                return self.model.predict(X_scaled)
+            else:
+                return self.model.predict(X)
         
-        # Count weights
-        for coef_matrix in self.model.coefs_:
-            total_params += coef_matrix.size
+        # PyTorch prediction
+        if self.use_scaling:
+            X_scaled = self.scaler.transform(X)
+        else:
+            X_scaled = X.values
         
-        # Count biases
-        for bias_vector in self.model.intercepts_:
-            total_params += bias_vector.size
+        X_tensor = torch.FloatTensor(X_scaled).to(self.device)
         
-        return total_params
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(X_tensor)
+            _, predicted = torch.max(outputs, 1)
+            
+        return predicted.cpu().numpy()
+    
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        if not self.is_trained:
+            raise ValueError("Model must be trained first")
+        
+        if not TORCH_AVAILABLE:
+            # Fallback prediction
+            if self.use_scaling:
+                X_scaled = self.scaler.transform(X)
+                return self.model.predict_proba(X_scaled)
+            else:
+                return self.model.predict_proba(X)
+        
+        # PyTorch prediction
+        if self.use_scaling:
+            X_scaled = self.scaler.transform(X)
+        else:
+            X_scaled = X.values
+        
+        X_tensor = torch.FloatTensor(X_scaled).to(self.device)
+        
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(X_tensor)
+            probabilities = torch.softmax(outputs, dim=1)
+            
+        return probabilities.cpu().numpy()
