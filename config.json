@@ -1,0 +1,93 @@
+{
+  "ensemble_weights": {
+    "serve_analysis": 0.35,
+    "break_point_psychology": 0.25,
+    "momentum_control": 0.20,
+    "surface_advantage": 0.15,
+    "clutch_performance": 0.05
+  },
+  "elo_k_factor": 32,
+  "min_matches_threshold": 5,
+  "confidence_threshold": 0.65,
+  "prediction_threshold": 0.6,
+  "min_edge_threshold": 0.05,
+  "max_matches_per_day": 50,
+  "data_refresh_hours": 1,
+  "timezone": "UTC",
+  "notification_enabled": false,
+  "auto_save_results": true,
+  "weather_api_key": null,
+  "odds_api_key": null,
+  "telegram_bot_token": null,
+  "telegram_chat_id": null,
+  "data_sources": {
+    "atp_api": "https://api.atptour.com",
+    "wta_api": "https://api.wtatennis.com",
+    "weather_api": "https://api.openweathermap.org/data/2.5/weather",
+    "odds_api": "https://api.the-odds-api.com/v4/sports",
+    "rankings_api": "https://www.atptour.com/en/rankings"
+  },
+  "model_parameters": {
+    "random_forest": {
+      "n_estimators": 200,
+      "max_depth": 15,
+      "min_samples_split": 5,
+      "min_samples_leaf": 2
+    },
+    "gradient_boosting": {
+      "n_estimators": 150,
+      "learning_rate": 0.1,
+      "max_depth": 8
+    },
+    "xgboost": {
+      "n_estimators": 200,
+      "learning_rate": 0.1,
+      "max_depth": 6,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8
+    },
+    "catboost": {
+      "iterations": 200,
+      "learning_rate": 0.1,
+      "depth": 6
+    },
+    "neural_network": {
+      "hidden_layer_sizes": [100, 50, 25],
+      "activation": "relu",
+      "alpha": 0.001,
+      "batch_size": 32,
+      "learning_rate": "adaptive"
+    }
+  },
+  "feature_settings": {
+    "use_weather": true,
+    "use_odds": true,
+    "use_h2h": true,
+    "use_surface_specific": true,
+    "use_momentum": true,
+    "use_psychological": true,
+    "max_h2h_matches": 20,
+    "recent_form_matches": 10,
+    "momentum_window_days": 30
+  },
+  "prediction_settings": {
+    "morning_run_time": "00:00",
+    "update_frequency_hours": 6,
+    "minimum_confidence_report": 0.55,
+    "minimum_edge_report": 0.03,
+    "max_predictions_per_report": 20
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "tennis_predictor_202.log",
+    "max_file_size": "10MB",
+    "backup_count": 5
+  },
+  "performance_targets": {
+    "accuracy_target": 0.80,
+    "precision_target": 0.78,
+    "recall_target": 0.82,
+    "f1_target": 0.80,
+    "edge_detection_rate": 0.15
+  }
+}
